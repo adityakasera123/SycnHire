@@ -98,3 +98,30 @@ Hum har feature ko **Vertical Slice** tarike se banayenge: pehle us feature ka *
 * **Killer Feature 1 — Time-Travel Code Replay:** Interview ke dauran har kuch seconds mein code ka snapshot timestamp ke saath save hoga. Report page par ek Play/Pause slider hoga jisse interviewer poora code bante hue replay kar sakega.
 * **Killer Feature 2 — Smart Integrity Radar:** Agar candidate tab switch karega ya bada code block copy-paste karega, toh backend mein log save hoga aur interviewer ko chhota silent alert dikhega.
 * **Deployment:** Backend ko **Render** par aur Frontend ko **Vercel** par deploy karenge taaki live link resume mein laga sako.
+
+
+
+day 2 -
+# SyncHire
+
+A real-time, browser-based technical interview platform where interviewers and candidates can collaborate on live executable code over a 1v1 video call.
+
+## Tech Stack
+- **Frontend:** React (Vite), Tailwind CSS, Monaco Editor, PeerJS (WebRTC)
+- **Backend:** Node.js, Express.js, Socket.io
+- **Database:** MongoDB Atlas (Mongoose)
+- **Auth:** JWT & bcryptjs
+
+## Key Features
+- **Interviewer Auth & Dashboard:** Secure signup/login and room management.
+- **Zero-Login Guest Lobby:** Candidates join via invite link with host Admit/Deny controls.
+- **Live Collaborative Editor:** Real-time code sync (Socket.io) with multi-language execution.
+- **1v1 Video/Audio Call:** Built-in WebRTC call inside the workspace.
+- **Private Scorecard & Replay:** Host-only ratings, notes, and post-interview code replay.
+
+## Local Setup
+
+1. **Clone the repository**
+   ```bash
+   git clone <your-repo-url>
+   cd synchire
