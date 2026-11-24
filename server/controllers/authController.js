@@ -78,3 +78,9 @@ export const loginUser = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// 3. GET CURRENT USER (Logged-in user ki profile dekhna)
+export const getMe = async (req, res) => {
+  // Security Guard (protect) ne req.user mein pehle hi user ka data daal diya hai
+  res.status(200).json(req.user);
+};
