@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import authRoutes from "./routes/authRoutes.js"
+import roomRoutes from "./routes/roomRoutes.js";
+
 
 // .env file ke variables load karne ke liye
 dotenv.config();
@@ -13,6 +15,7 @@ const PORT = process.env.PORT || 8000;
 app.use(cors()); // Frontend ko allow karega
 app.use(express.json()); // Incoming JSON data ko padhne ke liye
 app.use("/api/auth",authRoutes);
+app.use("/api/rooms", roomRoutes);
 
 // Test Route
 app.get("/", (req, res) => {
