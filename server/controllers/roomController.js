@@ -45,7 +45,7 @@ export const getRoomById = async (req, res) => {
   try {
     const room = await Room.findOne({ roomId: req.params.roomId }).populate(
       "host",
-      "name email"
+      "name"
     );
 
     if (!room) {
