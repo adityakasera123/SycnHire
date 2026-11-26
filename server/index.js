@@ -1,32 +1,36 @@
 import express from "express";
+import http from "http";
+import { Server } from "socket.io";
 import cors from "cors";
 import dotenv from "dotenv";
-import authRoutes from "./routes/authRoutes.js"
+import connectDB from "./config/db.js";
+import authRoutes from "./routes/authRoutes.js";
 import roomRoutes from "./routes/roomRoutes.js";
+import { setupSocket } from "./socket/socketHandler.js";
 
-
-// .env file ke variables load karne ke liye
 dotenv.config();
+connectDB();
 
 const app = express();
-const PORT = process.env.PORT || 8000;
+const server = http.createServer(app);
 
-// Middlewares
-app.use(cors()); // Frontend ko allow karega
-app.use(express.json()); // Incoming JSON data ko padhne ke liye
-app.use("/api/auth",authRoutes);
+// Socket.io setup with CORS
+const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST", "PATCH"],
+  },
+});
+
+setupSocket(io);
+
+app.use(cors({ origin: "http://localhost:5173" }));
+app.use(express.json());
+
+app.use("/api/auth", authRoutes);
 app.use("/api/rooms", roomRoutes);
 
-// Test Route
-app.get("/", (req, res) => {
-  res.json({ message: "SyncHire Backend is running!" });
+const PORT = process.env.PORT || 8000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
-
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
-
-import connectDB from "./config/db.js"; // Top par imports ke saath
-
-// dotenv.config(); ke neeche:
-connectDB();
