@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { io } from "socket.io-client";
+import Editor from "@monaco-editor/react";
 import {
   ArrowLeft,
   Copy,
@@ -11,9 +13,17 @@ import {
   User,
   LogOut,
   ArrowRight,
+  Lock,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../utils/api";
+
+const LANGUAGES = [
+  { id: "javascript", label: "JavaScript" },
+  { id: "python", label: "Python" },
+  { id: "cpp", label: "C++" },
+  { id: "java", label: "Java" },
+];
 
 export default function Room() {
   const { roomId } = useParams();
@@ -24,20 +34,32 @@ export default function Room() {
   const [error, setError] = useState("");
 
   // Candidate lobby states
-  const [candidateName, setCandidateName] = useState("");
-  const [hasJoined, setHasJoined] = useState(false);
+const storageKey = `synchire_candidate_${roomId}`;
+  const savedCandidate = sessionStorage.getItem(storageKey) || "";
 
-  // Check karo ki kya browser mein logged-in user hai
+  const [candidateName, setCandidateName] = useState(savedCandidate);
+  const [hasJoined, setHasJoined] = useState(Boolean(savedCandidate));
+
+  // Live Editor & Socket states
+  const [code, setCode] = useState("// Write your code here...\n");
+  const [language, setLanguage] = useState("javascript");
+  const [participants, setParticipants] = useState([]);
+
+  const socketRef = useRef(null);
+  const isRemoteUpdate = useRef(false);
+
   const storedUser = localStorage.getItem("user");
   const currentUser = storedUser ? JSON.parse(storedUser) : null;
 
+  // 1. Fetch Room Details from MongoDB
   useEffect(() => {
     const fetchRoom = async () => {
       try {
         const { data } = await api.get(`/rooms/${roomId}`);
         setRoom(data);
+        setCode(data.code || "// Write your code here...\n");
+        setLanguage(data.language || "javascript");
 
-        // Agar logged-in user hi is room ka host hai, toh seedha enter kara do
         if (currentUser && data.host?._id === currentUser._id) {
           setHasJoined(true);
         }
@@ -52,17 +74,82 @@ export default function Room() {
   }, [roomId]);
 
   const isHost = Boolean(currentUser && room?.host?._id === currentUser._id);
+  const isReadOnly = room?.status === "ended";
+
+  // 2. Connect to Socket.io once user has joined the room
+  useEffect(() => {
+    if (!hasJoined || !room) return;
+
+    const socket = io("http://localhost:8000");
+    socketRef.current = socket;
+
+    const userName = isHost ? currentUser.name : candidateName.trim();
+    const userRole = isHost ? "Interviewer" : "Candidate";
+
+    socket.emit("join-room", { roomId, name: userName, role: userRole });
+
+    socket.on("participants-update", (list) => {
+      setParticipants(list);
+    });
+
+    socket.on("user-joined", ({ name, role }) => {
+      toast.success(`${name} (${role}) joined the room`);
+    });
+
+    socket.on("user-left", ({ name }) => {
+      toast(`${name} left the room`, { icon: "👋" });
+    });
+
+    socket.on("code-update", (newCode) => {
+      isRemoteUpdate.current = true;
+      setCode(newCode);
+    });
+
+    socket.on("language-update", (newLang) => {
+      setLanguage(newLang);
+      toast(`Language switched to ${newLang.toUpperCase()}`, { icon: "💻" });
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [hasJoined, roomId, room?._id]);
+
+  // 3. Handle Local Code Typing
+  const handleCodeChange = (value) => {
+    if (isReadOnly) return;
+
+    const updatedCode = value ?? "";
+    setCode(updatedCode);
+
+    // Agar yeh update server se aaya tha, toh wapas emit mat karo
+    if (isRemoteUpdate.current) {
+      isRemoteUpdate.current = false;
+      return;
+    }
+
+    socketRef.current?.emit("code-change", { roomId, code: updatedCode });
+  };
+
+  // 4. Handle Language Change
+  const handleLanguageChange = (e) => {
+    if (isReadOnly) return;
+    const newLang = e.target.value;
+    setLanguage(newLang);
+    socketRef.current?.emit("language-change", { roomId, language: newLang });
+  };
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
     toast.success("Invite link copied!");
   };
 
-  const handleCandidateJoin = (e) => {
+const handleCandidateJoin = (e) => {
     e.preventDefault();
-    if (!candidateName.trim()) return;
+    const trimmed = candidateName.trim();
+    if (!trimmed) return;
+    sessionStorage.setItem(storageKey, trimmed);
     setHasJoined(true);
-    toast.success(`Joined as ${candidateName.trim()}`);
   };
 
   if (loading) {
@@ -86,7 +173,10 @@ export default function Room() {
             The invite link may be invalid or expired.
           </p>
           <button
-            onClick={() => navigate("/login")}
+            onClick={() => {
+                sessionStorage.removeItem(storageKey);
+                navigate("/login");
+              }}
             className="mt-6 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium text-white transition"
           >
             Go to Home
@@ -96,7 +186,7 @@ export default function Room() {
     );
   }
 
-  // CANDIDATE LOBBY (Sirf non-host users ko pehle yeh screen dikhegi)
+  // CANDIDATE LOBBY
   if (!isHost && !hasJoined) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center px-4">
@@ -150,13 +240,12 @@ export default function Room() {
     );
   }
 
-  // MAIN WORKSPACE (Role ke hisaab se alag UI)
+  // LIVE COLLABORATIVE WORKSPACE
   return (
-    <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100">
+    <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
       {/* Top Workspace Bar */}
-      <header className="h-14 px-4 border-b border-zinc-800 bg-zinc-900/60 flex items-center justify-between">
+      <header className="h-14 px-4 border-b border-zinc-800 bg-zinc-900/80 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          {/* Back to Dashboard sirf Interviewer ko dikhega */}
           {isHost && (
             <button
               onClick={() => navigate("/dashboard")}
@@ -176,7 +265,6 @@ export default function Room() {
                 <h1 className="text-sm font-semibold text-white leading-none">
                   {room.title}
                 </h1>
-                {/* Clear Role Badge */}
                 {isHost ? (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
                     <ShieldCheck className="w-3 h-3" />
@@ -196,13 +284,39 @@ export default function Room() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-800 text-xs text-zinc-300">
-            <Code2 className="w-3.5 h-3.5 text-indigo-400" />
-            {room.language}
-          </span>
+        {/* Right Controls */}
+        <div className="flex items-center gap-3">
+          {/* Live Participants Pill */}
+          <div
+            className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-800/80 border border-zinc-700/60 text-xs text-zinc-300"
+            title={participants.map((p) => `${p.name} (${p.role})`).join(", ")}
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <Users className="w-3.5 h-3.5 text-zinc-400" />
+            <span>{participants.length} Live</span>
+          </div>
 
-          {/* Interviewer ko Copy Invite, Candidate ko Leave Button */}
+          {/* Language Selector */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-800 border border-zinc-700/60">
+            <Code2 className="w-3.5 h-3.5 text-indigo-400" />
+            <select
+              value={language}
+              onChange={handleLanguageChange}
+              disabled={isReadOnly}
+              className="bg-transparent text-xs font-medium text-zinc-200 focus:outline-none cursor-pointer disabled:opacity-50"
+            >
+              {LANGUAGES.map((lang) => (
+                <option
+                  key={lang.id}
+                  value={lang.id}
+                  className="bg-zinc-900 text-zinc-200"
+                >
+                  {lang.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {isHost ? (
             <button
               onClick={handleCopyLink}
@@ -223,23 +337,32 @@ export default function Room() {
         </div>
       </header>
 
-      {/* Workspace Body */}
-      <main className="flex-1 flex items-center justify-center p-6">
-        <div className="max-w-lg w-full p-8 rounded-2xl bg-zinc-900/50 border border-dashed border-zinc-800 text-center">
-          <div className="w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto">
-            <Users className="w-6 h-6" />
-          </div>
-          <h2 className="text-base font-semibold text-white mt-4">
-            {isHost
-              ? `Welcome, ${currentUser.name} (Interviewer)`
-              : `Welcome, ${candidateName} (Candidate)`}
-          </h2>
-          <p className="text-sm text-zinc-400 mt-1.5">
-            {isHost
-              ? "Share the invite link with your candidate. Next, we'll plug in the live Monaco Code Editor here."
-              : "You are connected to the interview room. Waiting for the live code editor in Phase 3."}
-          </p>
+      {/* Read-Only Banner (agar room ended ho) */}
+      {isReadOnly && (
+        <div className="px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-amber-300 text-xs flex items-center justify-center gap-2">
+          <Lock className="w-3.5 h-3.5" />
+          This interview has ended. The editor is in read-only mode.
         </div>
+      )}
+
+      {/* Monaco Code Editor */}
+      <main className="flex-1 w-full overflow-hidden">
+        <Editor
+          height="100%"
+          language={language}
+          value={code}
+          theme="vs-dark"
+          onChange={handleCodeChange}
+          options={{
+            fontSize: 14,
+            minimap: { enabled: false },
+            scrollBeyondLastLine: false,
+            automaticLayout: true,
+            readOnly: isReadOnly,
+            padding: { top: 16 },
+            fontFamily: "JetBrains Mono, Menlo, Monaco, Consolas, monospace",
+          }}
+        />
       </main>
     </div>
   );
