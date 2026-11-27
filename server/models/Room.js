@@ -31,6 +31,15 @@ const roomSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    messages: [
+      {
+        id: Number,
+        message: String,
+        senderName: String,
+        senderRole: String,
+        timestamp: String,
+      },
+    ],
     status: {
       type: String,
       enum: ["active", "ended"],

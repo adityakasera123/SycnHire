@@ -456,6 +456,7 @@ const handleCandidateJoin = (e) => {
        isHost={isHost}
        messages={messages}
        onSendMessage={handleSendMessage}
+       onLoadMessages={setMessages}
        currentUserName={isHost ? currentUser?.name : candidateName.trim()}
      />
    </div>

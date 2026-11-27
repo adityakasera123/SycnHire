@@ -69,19 +69,33 @@ export const setupSocket = (io) => {
     });
 
     // 5. LIVE CHAT MESSAGE
-    socket.on("send-message", ({ roomId, message, senderName, senderRole }) => {
-      io.to(roomId).emit("receive-message", {
-        id: Date.now() + Math.random(),
-        message,
-        senderName,
-        senderRole,
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      });
-    });
+   // 5. LIVE CHAT MESSAGE (Live sync + MongoDB save)
+    socket.on(
+      "send-message",
+      async ({ roomId, message, senderName, senderRole }) => {
+        const msgData = {
+          id: Date.now() + Math.random(),
+          message,
+          senderName,
+          senderRole,
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        };
 
+        io.to(roomId).emit("receive-message", msgData);
+
+        try {
+          await Room.findOneAndUpdate(
+            { roomId },
+            { $push: { messages: msgData } }
+          );
+        } catch (err) {
+          console.error("Chat save error:", err.message);
+        }
+      }
+    );
     // 5. DISCONNECT (3-second grace period ke saath)
     socket.on("disconnect", () => {
       const { roomId, name, role } = socket.data || {};

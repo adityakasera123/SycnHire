@@ -7,6 +7,7 @@ export default function RoomSidebar({
   isHost,
   messages,
   onSendMessage,
+  onLoadMessages,
   currentUserName,
 }) {
   const [activeTab, setActiveTab] = useState("chat");
@@ -30,6 +31,7 @@ export default function RoomSidebar({
       try {
         const { data } = await api.get(`/rooms/${roomId}/notes`);
         setNotes(data.notes || "");
+        if (data.messages) onLoadMessages(data.messages);
       } catch (err) {
         console.error("Failed to load notes:", err.message);
       }

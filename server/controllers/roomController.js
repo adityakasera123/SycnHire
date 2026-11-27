@@ -45,7 +45,7 @@ export const getRoomById = async (req, res) => {
   try {
    const room = await Room.findOne({ roomId: req.params.roomId })
       .populate("host", "name")
-      .select("-notes");
+      .select("-notes -messages");
 
     if (!room) {
       return res.status(404).json({ message: "Interview room not found" });
@@ -92,7 +92,10 @@ export const getRoomNotes = async (req, res) => {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    res.status(200).json({ notes: room.notes || "" });
+    res.status(200).json({
+      notes: room.notes || "",
+      messages: room.messages || [],
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
