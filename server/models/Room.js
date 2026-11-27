@@ -27,6 +27,10 @@ const roomSchema = new mongoose.Schema(
       type: String,
       default: "// Write your code here...\n",
     },
+    notes: {
+      type: String,
+      default: "",
+    },
     status: {
       type: String,
       enum: ["active", "ended"],

@@ -1,9 +1,8 @@
 import Room from "../models/Room.js";
 
-// Har room ke live participants track karne ke liye: roomId -> Map(socketId -> { name, role })
 const roomParticipants = new Map();
-// Auto-save debounce timers track karne ke liye
 const saveTimers = new Map();
+const disconnectTimers = new Map();
 
 export const setupSocket = (io) => {
   io.on("connection", (socket) => {
@@ -12,25 +11,33 @@ export const setupSocket = (io) => {
       socket.join(roomId);
       socket.data = { roomId, name, role };
 
+      const userKey = `${roomId}:${name}:${role}`;
+      const isReconnect = disconnectTimers.has(userKey);
+
+      // Agar 3 sec ke andar reconnect hua (refresh), toh leave timer cancel kar do
+      if (isReconnect) {
+        clearTimeout(disconnectTimers.get(userKey));
+        disconnectTimers.delete(userKey);
+      }
+
       if (!roomParticipants.has(roomId)) {
         roomParticipants.set(roomId, new Map());
       }
       roomParticipants.get(roomId).set(socket.id, { name, role });
 
-      // Room ke sabhi logon ko updated participants list bhejo
       const participants = Array.from(roomParticipants.get(roomId).values());
       io.to(roomId).emit("participants-update", participants);
 
-      // Baaki logon ko notify karo ki naya banda aaya hai
-      socket.to(roomId).emit("user-joined", { name, role });
+      // Sirf tab notify karo jab genuinely naya join ho (refresh par nahi)
+      if (!isReconnect) {
+        socket.to(roomId).emit("user-joined", { name, role });
+      }
     });
 
     // 2. LIVE CODE SYNC + AUTO-SAVE
     socket.on("code-change", ({ roomId, code }) => {
-      // Doosre user ko turant updated code bhejo
       socket.to(roomId).emit("code-update", code);
 
-      // Debounced Auto-Save (typing rukne ke 1.5s baad MongoDB mein save)
       if (saveTimers.has(roomId)) {
         clearTimeout(saveTimers.get(roomId));
       }
@@ -56,7 +63,26 @@ export const setupSocket = (io) => {
       }
     });
 
-    // 4. DISCONNECT
+    // 4. LIVE CODE OUTPUT SYNC
+    socket.on("code-output", ({ roomId, output, isError }) => {
+      socket.to(roomId).emit("output-update", { output, isError });
+    });
+
+    // 5. LIVE CHAT MESSAGE
+    socket.on("send-message", ({ roomId, message, senderName, senderRole }) => {
+      io.to(roomId).emit("receive-message", {
+        id: Date.now() + Math.random(),
+        message,
+        senderName,
+        senderRole,
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      });
+    });
+
+    // 5. DISCONNECT (3-second grace period ke saath)
     socket.on("disconnect", () => {
       const { roomId, name, role } = socket.data || {};
       if (!roomId || !roomParticipants.has(roomId)) return;
@@ -69,8 +95,15 @@ export const setupSocket = (io) => {
       } else {
         const participants = Array.from(roomMap.values());
         io.to(roomId).emit("participants-update", participants);
-        socket.to(roomId).emit("user-left", { name, role });
       }
+
+      const userKey = `${roomId}:${name}:${role}`;
+      const timer = setTimeout(() => {
+        disconnectTimers.delete(userKey);
+        socket.to(roomId).emit("user-left", { name, role });
+      }, 3000);
+
+      disconnectTimers.set(userKey, timer);
     });
   });
 };

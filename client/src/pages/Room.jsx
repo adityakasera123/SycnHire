@@ -14,9 +14,12 @@ import {
   LogOut,
   ArrowRight,
   Lock,
+  Play,
+  Loader2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../utils/api";
+import OutputTerminal from "../components/OutputTerminal";
 
 const LANGUAGES = [
   { id: "javascript", label: "JavaScript" },
@@ -44,6 +47,11 @@ const storageKey = `synchire_candidate_${roomId}`;
   const [code, setCode] = useState("// Write your code here...\n");
   const [language, setLanguage] = useState("javascript");
   const [participants, setParticipants] = useState([]);
+
+  // Code Execution Output states
+  const [output, setOutput] = useState("");
+  const [isError, setIsError] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
 
   const socketRef = useRef(null);
   const isRemoteUpdate = useRef(false);
@@ -110,6 +118,11 @@ const storageKey = `synchire_candidate_${roomId}`;
       toast(`Language switched to ${newLang.toUpperCase()}`, { icon: "💻" });
     });
 
+    socket.on("output-update", ({ output: newOutput, isError: newIsError }) => {
+      setOutput(newOutput);
+      setIsError(newIsError);
+    });
+
     return () => {
       socket.disconnect();
     };
@@ -137,6 +150,35 @@ const storageKey = `synchire_candidate_${roomId}`;
     const newLang = e.target.value;
     setLanguage(newLang);
     socketRef.current?.emit("language-change", { roomId, language: newLang });
+  };
+
+  // 5. Run Code via Backend (Piston API) & Sync Output
+  const handleRunCode = async () => {
+    if (!code.trim()) return;
+    setIsRunning(true);
+    setOutput("");
+    setIsError(false);
+
+    try {
+      const { data } = await api.post("/code/run", { language, code });
+      const finalOutput = data.output || "(No output)";
+      setOutput(finalOutput);
+      setIsError(data.isError);
+
+      // Doosre user ki screen par bhi output sync kar do
+      socketRef.current?.emit("code-output", {
+        roomId,
+        output: finalOutput,
+        isError: data.isError,
+      });
+    } catch (err) {
+      const errMsg = err.response?.data?.message || "Failed to execute code";
+      setOutput(errMsg);
+      setIsError(true);
+      toast.error(errMsg);
+    } finally {
+      setIsRunning(false);
+    }
   };
 
   const handleCopyLink = () => {
@@ -317,6 +359,20 @@ const handleCandidateJoin = (e) => {
             </select>
           </div>
 
+              {/* Run Code Button */}
+          <button
+            onClick={handleRunCode}
+            disabled={isRunning}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-medium text-white transition disabled:opacity-50"
+          >
+            {isRunning ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Play className="w-3.5 h-3.5 fill-current" />
+            )}
+            Run
+          </button>
+
           {isHost ? (
             <button
               onClick={handleCopyLink}
@@ -345,22 +401,34 @@ const handleCandidateJoin = (e) => {
         </div>
       )}
 
-      {/* Monaco Code Editor */}
-      <main className="flex-1 w-full overflow-hidden">
-        <Editor
-          height="100%"
-          language={language}
-          value={code}
-          theme="vs-dark"
-          onChange={handleCodeChange}
-          options={{
-            fontSize: 14,
-            minimap: { enabled: false },
-            scrollBeyondLastLine: false,
-            automaticLayout: true,
-            readOnly: isReadOnly,
-            padding: { top: 16 },
-            fontFamily: "JetBrains Mono, Menlo, Monaco, Consolas, monospace",
+     {/* Monaco Code Editor + Output Terminal */}
+      <main className="flex-1 flex flex-col w-full overflow-hidden">
+        <div className="flex-1 overflow-hidden">
+          <Editor
+            height="100%"
+            language={language}
+            value={code}
+            theme="vs-dark"
+            onChange={handleCodeChange}
+            options={{
+              fontSize: 14,
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              automaticLayout: true,
+              readOnly: isReadOnly,
+              padding: { top: 16 },
+              fontFamily: "JetBrains Mono, Menlo, Monaco, Consolas, monospace",
+            }}
+          />
+        </div>
+
+        <OutputTerminal
+          output={output}
+          isError={isError}
+          isRunning={isRunning}
+          onClear={() => {
+            setOutput("");
+            setIsError(false);
           }}
         />
       </main>

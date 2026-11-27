@@ -43,10 +43,9 @@ export const getMyRooms = async (req, res) => {
 // 3. GET SINGLE ROOM BY ROOM ID (GET /api/rooms/:roomId) - Public (for candidates)
 export const getRoomById = async (req, res) => {
   try {
-    const room = await Room.findOne({ roomId: req.params.roomId }).populate(
-      "host",
-      "name"
-    );
+   const room = await Room.findOne({ roomId: req.params.roomId })
+      .populate("host", "name")
+      .select("-notes");
 
     if (!room) {
       return res.status(404).json({ message: "Interview room not found" });
@@ -78,6 +77,41 @@ export const endRoom = async (req, res) => {
     await room.save();
 
     res.status(200).json(room);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// GET /api/rooms/:roomId/notes (Sirf Host ke liye)
+export const getRoomNotes = async (req, res) => {
+  try {
+    const room = await Room.findOne({ roomId: req.params.roomId });
+    if (!room) return res.status(404).json({ message: "Room not found" });
+
+    if (room.host.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    res.status(200).json({ notes: room.notes || "" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// PATCH /api/rooms/:roomId/notes (Sirf Host ke liye)
+export const updateRoomNotes = async (req, res) => {
+  try {
+    const room = await Room.findOne({ roomId: req.params.roomId });
+    if (!room) return res.status(404).json({ message: "Room not found" });
+
+    if (room.host.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    room.notes = req.body.notes ?? "";
+    await room.save();
+
+    res.status(200).json({ notes: room.notes });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
