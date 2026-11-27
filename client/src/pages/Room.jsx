@@ -20,6 +20,7 @@ import {
 import toast from "react-hot-toast";
 import api from "../utils/api";
 import OutputTerminal from "../components/OutputTerminal";
+import RoomSidebar from "../components/RoomSidebar";
 
 const LANGUAGES = [
   { id: "javascript", label: "JavaScript" },
@@ -52,6 +53,7 @@ const storageKey = `synchire_candidate_${roomId}`;
   const [output, setOutput] = useState("");
   const [isError, setIsError] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [messages, setMessages] = useState([]);
 
   const socketRef = useRef(null);
   const isRemoteUpdate = useRef(false);
@@ -122,6 +124,9 @@ const storageKey = `synchire_candidate_${roomId}`;
       setOutput(newOutput);
       setIsError(newIsError);
     });
+    socket.on("receive-message", (msg) => {
+  setMessages((prev) => [...prev, msg]);
+});
 
     return () => {
       socket.disconnect();
@@ -180,6 +185,17 @@ const storageKey = `synchire_candidate_${roomId}`;
       setIsRunning(false);
     }
   };
+
+  const handleSendMessage = (message) => {
+  const senderName = isHost ? currentUser.name : candidateName.trim();
+  const senderRole = isHost ? "Interviewer" : "Candidate";
+  socketRef.current?.emit("send-message", {
+    roomId,
+    message,
+    senderName,
+    senderRole,
+  });
+};
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -402,36 +418,47 @@ const handleCandidateJoin = (e) => {
       )}
 
      {/* Monaco Code Editor + Output Terminal */}
-      <main className="flex-1 flex flex-col w-full overflow-hidden">
-        <div className="flex-1 overflow-hidden">
-          <Editor
-            height="100%"
-            language={language}
-            value={code}
-            theme="vs-dark"
-            onChange={handleCodeChange}
-            options={{
-              fontSize: 14,
-              minimap: { enabled: false },
-              scrollBeyondLastLine: false,
-              automaticLayout: true,
-              readOnly: isReadOnly,
-              padding: { top: 16 },
-              fontFamily: "JetBrains Mono, Menlo, Monaco, Consolas, monospace",
-            }}
-          />
-        </div>
+      {/* Main Split Workspace: Left (Editor + Terminal) | Right (Chat + Notes) */}
+   <div className="flex-1 flex overflow-hidden">
+     <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+       <div className="flex-1 overflow-hidden">
+         <Editor
+           height="100%"
+           language={language}
+           value={code}
+           theme="vs-dark"
+           onChange={handleCodeChange}
+           options={{
+             fontSize: 14,
+             minimap: { enabled: false },
+             scrollBeyondLastLine: false,
+             automaticLayout: true,
+             readOnly: isReadOnly,
+             padding: { top: 16 },
+             fontFamily: "JetBrains Mono, Menlo, Monaco, Consolas, monospace",
+           }}
+         />
+       </div>
 
-        <OutputTerminal
-          output={output}
-          isError={isError}
-          isRunning={isRunning}
-          onClear={() => {
-            setOutput("");
-            setIsError(false);
-          }}
-        />
-      </main>
+       <OutputTerminal
+         output={output}
+         isError={isError}
+         isRunning={isRunning}
+         onClear={() => {
+           setOutput("");
+           setIsError(false);
+         }}
+       />
+     </main>
+
+     <RoomSidebar
+       roomId={roomId}
+       isHost={isHost}
+       messages={messages}
+       onSendMessage={handleSendMessage}
+       currentUserName={isHost ? currentUser?.name : candidateName.trim()}
+     />
+   </div>
     </div>
   );
 }
